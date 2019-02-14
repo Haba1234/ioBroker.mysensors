@@ -71,10 +71,85 @@ function listSerial(ports) {
     return result;
 }
 
+function getNodesList(obj){
+	let nodesList = [];
+	let nodesList2 = [];
+	let objListNodes = {};
+	adapter.getDevicesAsync()
+        .then(arrDevices => {
+			let chain = [];
+            arrDevices.forEach(obj => {
+				nodesList2.push([obj._id.split('.')[2], obj.common.name]);
+				//adapter.log.warn('obj: ' + JSON.stringify(obj));
+				chain.push(new Promise((resolve, reject) => {
+					adapter.getChannelsOf(obj._id, function (err, channels){
+						//adapter.log.warn('channels1: ' + JSON.stringify(channels));
+						var listChannels = [];
+						channels.forEach(channel => {
+							if (channel._id.indexOf('255_ARDUINO_NODE') > 0){
+								nodesList.push([obj._id.split('.')[2], obj.common.name, channel.common.name]);
+								listChannels.push(channel._id);
+							}
+						});
+						resolve(listChannels);
+					});
+				}));
+			});						
+			return Promise.all(chain)
+		})
+		.then (listChannels => {
+			//adapter.log.warn('listChannels: ' + JSON.stringify(listChannels));
+			//adapter.log.warn('nodesList: ' + JSON.stringify(nodesList));
+			let chain = [];
+			listChannels.forEach(channel => {
+				if (channel.length) {
+					//adapter.log.warn('channel: ' + channel);
+					chain.push(new Promise((resolve, reject) => {
+						resolve(adapter.getStateAsync(`${channel}.I_SKETCH_VERSION`));
+					}));
+				}
+			});
+			return Promise.all(chain);
+		})
+		.then (sketchVer => {
+			let tmpListNodes = sketchVer.map(({ val }) => val).map((node, i) => {
+				nodesList[i][1] = nodesList[i][1] + ' (ver. ' + node + ')';
+				return nodesList[i];
+			});
+			//adapter.log.warn('tmpListNodes: ' + JSON.stringify(tmpListNodes));
+			tmpListNodes.forEach((node, i) => {
+				//adapter.log.warn('tmpListNodes: ' + JSON.stringify(node));
+				nodesList2.findIndex((node2, index)=>{
+					if (node[0] === node2[0]) {
+						nodesList2[index][1] = node[1];
+						nodesList2[index].push(node[2]);
+						objListNodes[node2[0]] = nodesList2[index];
+						return true;
+					}
+					objListNodes[node2[0]] = nodesList2[index];
+					return false;
+				});
+			});
+			//adapter.log.warn('nodesList2: ' + JSON.stringify(nodesList2));
+			//adapter.log.warn('objListNodes: ' + JSON.stringify(objListNodes));
+			try {
+				adapter.sendTo(obj.from, obj.command, objListNodes, obj.callback);
+			}
+			catch (e) {
+			   // инструкции для работы с ошибками
+			   adapter.log.error(e); // передает объект ошибки для управления им
+			}
+		})
+		.catch(err => {
+            adapter.log.error('nodesList error: ' + JSON.stringify(err));
+        });
+}
+
 //принимаем и обрабатываем сообщения
 adapter.on('message', function (obj) {
     if (obj) {
-        switch (obj.command) {
+		adapter.log.warn('obj.command: ' + obj.command);
+        switch (obj.command.split('.')[0]) {
             case 'listUart':
                 if (obj.callback) {
                     if (serialport) {
@@ -89,8 +164,15 @@ adapter.on('message', function (obj) {
                         adapter.sendTo(obj.from, obj.command, [{comName: 'Not available'}], obj.callback);
                     }
                 }
-
                 break;
+			case 'getNodes':
+				getNodesList(obj);
+				break;
+			case 'rebootID':
+				let id = obj.command.split('.')[1];
+				adapter.log.debug('Rebooting node ID = ' + id);
+				mySensorsInterface.write(id + ';255;3;1;13;1');
+				break;
         }
     }
 });
@@ -145,6 +227,11 @@ adapter.on('stateChange', function (id, state) {
 
     // Warning, state can be null if it was deleted
     adapter.log.debug('stateChange ' + id + ' ' + JSON.stringify(state));
+	if (state.val === 'reboot'){
+		adapter.log.debug('Reboot node ' + devices[id].native.id);
+		mySensorsInterface.write(devices[id].native.id + ';255;3;1;13;1', devices[id].native.ip);
+	return;
+	}
     if (id === adapter.namespace + '.inclusionOn') {
         setInclusionState(state.val);
         setTimeout(function (val) {
@@ -481,27 +568,32 @@ function main() {
                     } else if (result[i].type === 'internal') {
                         var saveValue = false;
                         switch (result[i].subType) {
-                            case 'I_PRE_SLEEP_NOTIFICATION':     //   32   Message sent before node is going to sleep
+                            case 'I_DISCOVER_RESPONSE':     		//   21   Discover request
+                                adapter.log.info('Node: ' + result[i].id + ' discover request');
+                                saveValue = true;
+                                break;
+								
+							case 'I_PRE_SLEEP_NOTIFICATION':     	//   32   Message sent before node is going to sleep
                                 adapter.log.info('Timeout pre sleep ' + (ip ? ' from ' + ip + ' ' : '') + ':' + result[i].payload);
                                 saveValue = true;
                                 break;
                             
-                            case 'I_POST_SLEEP_NOTIFICATION':     //   33   Message sent after node woke up (if enabled)
+                            case 'I_POST_SLEEP_NOTIFICATION':     	//   33   Message sent after node woke up (if enabled)
                                 adapter.log.info('Timeout post sleep ' + (ip ? ' from ' + ip + ' ' : '') + ':' + result[i].payload);
                                 saveValue = true;
                                 break;
                                 
-                            case 'I_HEARTBEAT_RESPONSE':     //   22   Heartbeat response
+                            case 'I_HEARTBEAT_RESPONSE':     		//   22   Heartbeat response
                                 adapter.log.info('Hearbeat ' + (ip ? ' from ' + ip + ' ' : '') + ':' + result[i].payload);
                                 saveValue = true;
                                 break;
                                 
-                            case 'I_BATTERY_LEVEL':     //   0   Use this to report the battery level (in percent 0-100).
+                            case 'I_BATTERY_LEVEL':     			//   0   Use this to report the battery level (in percent 0-100).
                                 adapter.log.info('Battery level ' + (ip ? ' from ' + ip + ' ' : '') + ':' + result[i].payload);
                                 saveValue = true;
                                 break;
 
-                            case 'I_TIME':              //   1   Sensors can request the current time from the Controller using this message. The time will be reported as the seconds since 1970
+                            case 'I_TIME':              			//   1   Sensors can request the current time from the Controller using this message. The time will be reported as the seconds since 1970
                                 adapter.log.info('Time ' + (ip ? ' from ' + ip + ' ' : '') + ':' + result[i].payload);
                                 if (!result[i].ack) {
                                     // send response: internal, ack=1
@@ -510,7 +602,7 @@ function main() {
                                 break;
 
                             case 'I_SKETCH_VERSION':
-                            case 'I_VERSION':           //   2   Used to request gateway version from controller.
+                            case 'I_VERSION':           			//   2   Used to request gateway version from controller.
                                 adapter.log.info('Version ' + (ip ? ' from ' + ip + ' ' : '') + ':' + result[i].payload);
                                 saveValue = true;
                                 if (!result[i].ack && result[i].subType === 'I_VERSION') {
@@ -587,6 +679,10 @@ function main() {
                             case 'ST_SOUND':
                                 break;
                             case 'ST_IMAGE':
+                                break;
+							case 'ST_FIRMWARE_CONFIRM':
+                                break;
+							case 'ST_FIRMWARE_RESPONSE_RLE':
                                 break;
                         }
                     }
