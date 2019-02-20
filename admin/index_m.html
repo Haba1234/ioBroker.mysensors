@@ -1,246 +1,347 @@
 <html>
+
 <head>
-<!-- these 4 files always have to be included -->
-<link rel="stylesheet" type="text/css" href="../../css/adapter.css"/>
-<link rel="stylesheet" type="text/css" href="../../lib/css/materialize.css">
+  <!-- these 4 files always have to be included -->
+  <link rel="stylesheet" type="text/css" href="../../css/adapter.css" />
+  <link rel="stylesheet" type="text/css" href="../../lib/css/materialize.css">
 
-<script type="text/javascript" src="../../lib/js/jquery-3.2.1.min.js"></script>
-<script type="text/javascript" src="../../socket.io/socket.io.js"></script>
+  <script type="text/javascript" src="../../lib/js/jquery-3.2.1.min.js"></script>
+  <script type="text/javascript" src="../../socket.io/socket.io.js"></script>
 
-<!-- these files always have to be included -->
-<script type="text/javascript" src="../../js/translate.js"></script>
-<script type="text/javascript" src="../../lib/js/materialize.js"></script>
-<script type="text/javascript" src="../../js/adapter-settings.js"></script>
-<script type="text/javascript" src="words.js"></script>
+  <!-- these files always have to be included -->
+  <script type="text/javascript" src="../../js/translate.js"></script>
+  <script type="text/javascript" src="../../lib/js/materialize.js"></script>
+  <script type="text/javascript" src="../../js/adapter-settings.js"></script>
+  <script type="text/javascript" src="words.js"></script>
 
-<script type="text/javascript">
+  <script type="text/javascript">
     var timeout;
+    var listTable = '';
 
     function getComPorts(actualValue) {
-        timeout = setTimeout(function () {
+      timeout = setTimeout(function() {
+        getComPorts(actualValue);
+      }, 2000);
+      sendTo(null, 'listUart', null, function(list) {
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+        if (!list || !list.length) {
+          setTimeout(function() {
             getComPorts(actualValue);
-        }, 2000);
-        sendTo(null, 'listUart', null, function (list) {
-            if (timeout) {
-                clearTimeout(timeout);
-                timeout = null;
-            }
-            if (!list || !list.length) {
-                setTimeout(function () {
-                    getComPorts(actualValue);
-                }, 1000);
-                return;
-            }
-            $('#comName').append('<option value="">' + _('Select port') + '</option>');
-            for (var j = 0; j < list.length; j++) {
-                if (list[j].comName === 'Not available') {
-                    $('#comName').append('<option value="" selected>' + _('Not available') + '</option>');
-                    $('#comName').addClass('disabled');
-                    break;                    
-                } else {
-                    $('#comName').append('<option value="' + list[j].comName + '">' + list[j].comName + '</option>');
-                }               
-            }
-            $('#comName.value').val(actualValue).select();
-        });
+          }, 1000);
+          return;
+        }
+        $('#comName').append('<option value="">' + _('Select port') + '</option>');
+        for (var j = 0; j < list.length; j++) {
+          if (list[j].comName === 'Not available') {
+            $('#comName').append('<option value="" selected>' + _('Not available') + '</option>');
+            $('#comName').addClass('disabled');
+            break;
+          } else {
+            $('#comName').append('<option value="' + list[j].comName + '">' + list[j].comName + '</option>');
+          }
+        }
+        $('#comName.value').val(actualValue).select();
+      });
     }
 
     function setValue(id, value, onChange) {
-        var $value = $('#' + id + '.value');
-        if ($value.attr('type') === 'checkbox') {
-            $value.prop('checked', value).change(function () {
-                onChange();
-            });
-        } else {
-            $value.val(value).change(function () {
-                onChange();
-            }).keyup(function () {
-                // Check that only numbers entered
-                if ($(this).hasClass('number')) {
-                    var val = $(this).val();
-                    if (val) {
-                        var newVal = '';
-                        for (var i = 0; i < val.length; i++) {
-                            if (val[i] >= '0' && val[i] <= '9') {
-                                newVal += val[i];
-                            }
-                        }
-                        if (val != newVal) $(this).val(newVal);
-                    }
+      var $value = $('#' + id + '.value');
+      if ($value.attr('type') === 'checkbox') {
+        $value.prop('checked', value).change(function() {
+          onChange();
+        });
+      } else {
+        $value.val(value).change(function() {
+          onChange();
+        }).keyup(function() {
+          // Check that only numbers entered
+          if ($(this).hasClass('number')) {
+            var val = $(this).val();
+            if (val) {
+              var newVal = '';
+              for (var i = 0; i < val.length; i++) {
+                if (val[i] >= '0' && val[i] <= '9') {
+                  newVal += val[i];
                 }
-                onChange();
-            });
-        }
+              }
+              if (val != newVal) $(this).val(newVal);
+            }
+          }
+          onChange();
+        });
+      }
     }
-	
-	
+
+    function creatList() {
+      sendTo(null, 'getNodes', null, function(obj) {
+        var text;
+        for (var key in obj) {
+          if (obj.hasOwnProperty(key)) {
+            text += '<tr id="' + key + '"><td>' +
+              obj[key][0] + '</td><td>' +
+              obj[key][1] + '</td><td>' +
+              'none' + '</td><td>' +
+              'none' + '</td><td>' +
+              obj[key][2] + '</td><td>none</td><td><a id="reboot" data-id-reboot="' +
+              key + '" class="btn-floating waves-effect waves-teal btn-flat red btn-small button-reboot"><i class="material-icons">refresh</i></a></td>' +
+              '<td class="input-field">' +
+              '<select class="value" id="selID' + key + '">' +
+              '<option class="translate" value="" disabled selected>File frimfare:</option>' +
+              listTable + '</select></td><td><a id="download" data-id-download="' +
+              key + '" class="btn-floating waves-effect waves-teal btn-flat red btn-small button-download"><i class="material-icons">file_download</i></a></td></tr>'
+          }
+        }
+
+        $('#nodeTable').html(text);
+        var elems = document.querySelectorAll('select');
+        var instances = M.FormSelect.init(elems, {});
+      });
+    }
+
+    function readFile(callback) {
+      socket.emit('readDir', 'mysensors.' + instance, 'firmware', function(err, dir) {
+        if (!err && dir) {
+          listTable = '';
+          for (var i = 0; i < dir.length; i++) {
+            listTable += '<option value="' + dir[i].file + '">' + dir[i].file + '</option>'
+          }
+          creatList();
+        }
+        if (callback) callback(dir);
+      });
+    }
+
+    function uploadFile(file, callback) {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        socket.emit('writeFile', 'mysensors.' + instance, 'firmware/' + file.name, e.target.result, function() {
+          if (callback) callback(file.name);
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function handleFileSelect(evt) {
+      var files = evt.target.files; // FileList object
+      var count = 0;
+      for (var i = 0, f; f = files[i]; i++) {
+        count++;
+        uploadFile(f, function(name) {
+          count--;
+          if (!count) {
+            M.toast({
+              html: 'Upload done',
+              classes: 'rounded'
+            });
+            $('#uploadFileTitle').val('');
+            readFile();
+          }
+        });
+      }
+    }
 
     // the function loadSettings has to exist ...
     function load(settings, onChange) {
-        if (!settings) return;
-        devices = settings.devices || [];
-        for (var key in settings) {
-            if (settings.hasOwnProperty(key)) {
-                setValue(key, settings[key], onChange);
-            }
+      if (!settings) return;
+      devices = settings.devices || [];
+      for (var key in settings) {
+        if (settings.hasOwnProperty(key)) {
+          setValue(key, settings[key], onChange);
         }
-        
-        setInterval(function () {
-            socket.emit('getState', adapter + '.' + instance + '.inclusionOn', function (err, state) {
-                $("#enableInclusion").text( state && state.val ? _("Disable inclusion mode") : _("Enable inclusion mode"));
-            });
-        }, 5000);
+      }
 
-        setTimeout(function () {
-            socket.emit('getState', adapter + '.' + instance + '.inclusionOn', function (err, state) {
-                if (err) window.alert(err);
-                $('#enableInclusion').click(function () {
-                    socket.emit('getState', adapter + '.' + instance + '.inclusionOn', function (err, state) {
-                        state = state || {val: false};
-                        state.val = !state.val;
-                        $('#enableInclusion').text( state && state.val ? _("Disable inclusion mode") : _("Enable inclusion mode"));
-                        socket.emit('setState', adapter + '.' + instance + '.inclusionOn', {
-                            val: state.val,
-                            ack: false
-                        }, function (err) {
-                            if (!err) {
-                                showMessage(state.val ? _('Inclusion mode is active') : _('Inclusion mode is inactive'));
-                            } else {
-                                showError(err);
-                            }
-                        });
-                    });
-                }).text(state && state.val ? _('Disable inclusion mode') : _('Enable inclusion mode'));
-            });
-        }, 1000);
-
-        getIsAdapterAlive(function (isAlive) {
-            if (isAlive || common.enabled) {
-                getComPorts(settings.comName);               
-            } else {
-                $('#_comName').html('<input id="comName" class="value" value="' + settings.comName + '"/>');
-                $('#comName').change(onChange).keyup(onChange);
-            }
+      setInterval(function() {
+        socket.emit('getState', adapter + '.' + instance + '.inclusionOn', function(err, state) {
+          $("#enableInclusion").text(state && state.val ? _("Disable inclusion mode") : _("Enable inclusion mode"));
         });
+      }, 5000);
 
-        getIPs(function(ips) {
-            for (var i = 0; i < ips.length; i++) {
-                $('#bind').append('<option value="' + ips[i].address + '">' + ips[i].name + '</option>');
-            }
-            $('#bind.value').val(settings.bind).select();
+      setTimeout(function() {
+        socket.emit('getState', adapter + '.' + instance + '.inclusionOn', function(err, state) {
+          if (err) window.alert(err);
+          $('#enableInclusion').click(function() {
+            socket.emit('getState', adapter + '.' + instance + '.inclusionOn', function(err, state) {
+              state = state || {
+                val: false
+              };
+              state.val = !state.val;
+              $('#enableInclusion').text(state && state.val ? _("Disable inclusion mode") : _("Enable inclusion mode"));
+              socket.emit('setState', adapter + '.' + instance + '.inclusionOn', {
+                val: state.val,
+                ack: false
+              }, function(err) {
+                if (!err) {
+                  showMessage(state.val ? _('Inclusion mode is active') : _('Inclusion mode is inactive'));
+                } else {
+                  showError(err);
+                }
+              });
+            });
+          }).text(state && state.val ? _('Disable inclusion mode') : _('Enable inclusion mode'));
         });
+      }, 1000);
 
-        //editTable('devices', ['name', 'id', 'childId', 'subType', 'room'], devices, 350);
-        $('#type').change(onTypeChange);
-        onTypeChange();
-        onChange(false);
-        if (M) M.updateTextFields();
-		
-		$('#nodediv').on('click', 'a', function () {
-			const ID1 = $(this).attr("data-id-reboot");
-			const ID2 = $(this).attr("data-id-download");
-			if (ID1 !== undefined) sendTo(null, 'rebootID.' + ID1, null);
-			if (ID2 !== undefined) sendTo(null, 'downloadID.' + ID2, null);
-			//sendTo(null, 'reboorID ' + ID + ' ' + ID2, null, function (obj) {
-				//$('#' + obj).remove();
-			//});
-		});
+      getIsAdapterAlive(function(isAlive) {
+        if (isAlive || common.enabled) {
+          getComPorts(settings.comName);
+        } else {
+          $('#_comName').html('<input id="comName" class="value" value="' + settings.comName + '"/>');
+          $('#comName').change(onChange).keyup(onChange);
+        }
+      });
 
-		$('#firmware').click(function () {
-			if ($('#nodeTable').children().length === 0) {
-				sendTo(null, 'getNodes', null, function (obj) {
-					var text;
-					for (var key in obj) {
-						if (obj.hasOwnProperty(key)) {
-							text += '<tr id="' + key + '"><td>' 
-								+ obj[key][0] + '</td><td>' 
-								+ obj[key][1] + '</td><td>' 
-								+ 'none' + '</td><td>' 
-								+ 'none' + '</td><td>' 
-								+ obj[key][2] + '</td><td><a id="reboot" data-id-reboot="' 
-								+ key + '" class="btn-floating waves-effect waves-teal btn-flat red btn-small button-reboot"><i class="material-icons">refresh</i></a></td>'
-								+ '<td class="input-field">'
-								+ '<select class="value" id="loadFrimfare"><option value="110">110</option></select>' 
-								+ '<label class="translate" for="loadFrimfare">File frimfare:</label>'
-								+ '</td><td><a id="download" data-id-download="'
-								+ key + '" class="btn-floating waves-effect waves-teal btn-flat red btn-small button-download"><i class="material-icons">file_download</i></a></td></tr>'
-						}
-					}
-					$('#nodeTable').append(text);
-				});
-			}
-		});
+      getIPs(function(ips) {
+        for (var i = 0; i < ips.length; i++) {
+          $('#bind').append('<option value="' + ips[i].address + '">' + ips[i].name + '</option>');
+        }
+        $('#bind.value').val(settings.bind).select();
+      });
+
+      //editTable('devices', ['name', 'id', 'childId', 'subType', 'room'], devices, 350);
+      $('#type').change(onTypeChange);
+      onTypeChange();
+      onChange(false);
+      if (M) M.updateTextFields();
+
+      $('#nodediv').on('click', 'a', function() {
+        const ID1 = $(this).attr("data-id-reboot");
+        const ID2 = $(this).attr("data-id-download");
+        if (ID1 !== undefined) sendTo(null, 'rebootID.' + ID1, null);
+        if (ID2 !== undefined) {
+			var txt = ' ' + $("#selID2 option:selected").text();
+			sendTo(null, 'downloadID.' + ID2 + txt, null);
+		}
+      });
+
+      $('#firmware').click(function() {
+        readFile();
+      });
     }
 
     function onTypeChange() {
-        $('.serial').hide();
-        $('.tcp').hide();
-        $('.udp').hide();
-        $('.tcpclient').hide();
-        $('.' + $('#type').val()).show();
+      $('.serial').hide();
+      $('.tcp').hide();
+      $('.udp').hide();
+      $('.tcpclient').hide();
+      $('.' + $('#type').val()).show();
     }
-    
+
     // ... and the function save has to exist.
     // you have to make sure the callback is called with the settings object as first param!
     function save(callback) {
-        var obj = {};
-        $('.value').each(function () {
-            var $this = $(this);
-            if ($this.attr('type') === 'checkbox') {
-                obj[$this.attr('id')] = $this.prop('checked');
-            } else {
-                obj[$this.attr('id')] = $this.val();
-            }
-        });
-        callback(obj);
+      var obj = {};
+      $('.value').each(function() {
+        var $this = $(this);
+        if ($this.attr('type') === 'checkbox') {
+          obj[$this.attr('id')] = $this.prop('checked');
+        } else {
+          obj[$this.attr('id')] = $this.val();
+        }
+      });
+      callback(obj);
     }
-</script>
-	<style>
+
+    window.onload = function() {
+      $('#uploadFile').change(handleFileSelect);
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+
+    });
+
+  </script>
+  <style>
     .marg {
-            margin-top: 2em;
-        }
+      margin-top: 2em;
+    }
+
     .adapter-body {
-            overflow: hidden !important;
-        }
-    table.highlight > tbody > tr {
-            transition: background-color .25s ease !important;
-        }
-    table.highlight > tbody > tr:hover {
-            background-color: rgba(200, 200, 200, 0.5) !important;
-        }
-    </style>
+      overflow: hidden !important;
+    }
+
+    table.highlight>tbody>tr {
+      transition: background-color .25s ease !important;
+    }
+
+    table.highlight>tbody>tr:hover {
+      background-color: rgba(200, 200, 200, 0.5) !important;
+    }
+
+    .file-upload input[type="file"] {
+      display: none;
+    }
+
+    .file-upload {
+      position: relative;
+      /* overflow: hidden; */
+      width: 150px;
+      height: 30px;
+      background: #1E90FF;
+      border-radius: 5px;
+      text-align: center;
+    }
+
+    .file-upload:hover {
+      background: #4169E1;
+    }
+
+    /* Растягиваем label на всю область блока .file-upload */
+
+    .file-upload label {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+    }
+
+    /* стиль текста на кнопке*/
+
+    .file-upload span {
+      color: #fff;
+      line-height: 30px;
+      font-weight: bold;
+    }
+
+  </style>
 </head>
+
 <body>
-    <div class="m adapter-container">
+  <div class="m adapter-container">
+    <div class="row">
+      <div class="col s12">
+        <ul class="tabs">
+          <li class="tab col s3"><a href="#tab-main" class="translate active">Main settings</a></li>
+          <li class="tab col s3"><a href="#tab-firmware" class="translate active" id="firmware">Air firmware</a></li>
+        </ul>
+      </div>
+      <div id="tab-main" class="col s12 page">
         <div class="row">
-			<div class="col s12">
-                <ul class="tabs">
-                    <li class="tab col s3"><a href="#tab-main" class="translate active">Main settings</a></li>
-                    <li class="tab col s3"><a href="#tab-firmware" class="translate active" id="firmware">Air firmware</a></li>
-                </ul>
-            </div>
-			<div id="tab-main" class="col s12 page">
-				<div class="row">
-					<div class="col s6">
-						<img src="mysensors.png" class="logo">
-					</div>
-				</div>
-				<div class="row">
-					<div class="input-field col s12 m6 l4">
-						<select class="value" id="type">
+          <div class="col s6">
+            <img src="mysensors.png" class="logo">
+          </div>
+        </div>
+        <div class="row">
+          <div class="input-field col s12 m6 l4">
+            <select class="value" id="type">
 							<option value="serial"    class="translate">serial</option>
 							<option value="tcp"       class="translate">tcp server</option>
 							<option value="udp"       class="translate">udp server</option>
 							<option value="tcpclient" class="translate">tcp client</option>
 						</select>
-						<label class="translate" for="type">Type:</label>
-					</div>
-					<div class="input-field col s12 m6 l4 serial" id="_comName">
-						<select class="value" id="comName"></select>
-						<label class="translate" for="comName">Com port:</label>
-					</div>
-					<div class="input-field col s12 m6 l4 serial">
-						<select class="value" id="baudRate">
+            <label class="translate" for="type">Type:</label>
+          </div>
+          <div class="input-field col s12 m6 l4 serial" id="_comName">
+            <select class="value" id="comName"></select>
+            <label class="translate" for="comName">Com port:</label>
+          </div>
+          <div class="input-field col s12 m6 l4 serial">
+            <select class="value" id="baudRate">
 							<option value="110">110</option>
 							<option value="150">150</option>
 							<option value="300">300</option>
@@ -255,69 +356,69 @@
 							<option value="57600">57600</option>
 							<option value="115200">115200</option>
 						</select>
-						<label class="translate" for="baudRate">Baud rate:</label>
-					</div>
-					<div class="input-field col s12 m6 l4 tcp udp">
-						<select class="value" id="bind"></select>
-						<label class="translate" for="bind">Bind:</label>
-					</div>
-					<div class="input-field col s12 m6 l4 tcpclient">
-						<input class="value" type="text" id="ip"/>
-						<label class="translate" for="ip">IP:</label>
-					</div>
-					<div class="input-field col s12 m6 l4 tcp udp tcpclient">
-						<input class="value" type="text" id="port"/>
-						<label class="translate" for="port">Port:</label>
-					</div>
-					<div class="input-field col s12 m6 l4 udp serial">
-						<input class="value" type="text" id="connTimeout" />
-						<label class="translate" for="connTimeout">Connection timeout:</label>
-						<span class="translate">ms</span>
-					</div>
-					<div class="input-field col s12 m6 l4 tcp udp tcpclient serial">
-						<input class="value" type="text" id="inclusionTimeout" />
-						<label class="translate" for="inclusionTimeout">Inclusion mode timeout:</label>
-						<span class="translate">inclusion help</span>
-					</div>
-				</div>
-				<div class="row">
-					<div class="col s12 m6 l4 tcp udp tcpclient serial">
-						<a id="enableInclusion" class="waves-effect waves-light btn"><span class="translate">Enable inclusion mode</span></a>
-					</div>
-				</div>
-			</div>
-			<div id="tab-firmware" class="col s12 page">
-				<div class="row">
-                    <div id="nodediv" class="col s12 m12">
-                        <table class="highlight">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Name Sketch</th>
-									<th>Type</th>
-									<th>Parent</th>
-									<th>Version</th>
-									<th>Reboot</th>
-									<th>
-										<div class="file-field input-field  col s12 m1 11">
-											<div class="btn">
-												<span class="translate">Firmware</span>
-												<input type="file" accept=".hex,audio/*" id="files" name="files[]" multiple />
-											</div>
-										</div>
-									</th>
-									<th>Download?</th>
-                                </tr>
-                            </thead>
-                            <tbody id="nodeTable">
-                                <!-- Filled by function -->
-                            </tbody>
-                        </table>
+            <label class="translate" for="baudRate">Baud rate:</label>
+          </div>
+          <div class="input-field col s12 m6 l4 tcp udp">
+            <select class="value" id="bind"></select>
+            <label class="translate" for="bind">Bind:</label>
+          </div>
+          <div class="input-field col s12 m6 l4 tcpclient">
+            <input class="value" type="text" id="ip" />
+            <label class="translate" for="ip">IP:</label>
+          </div>
+          <div class="input-field col s12 m6 l4 tcp udp tcpclient">
+            <input class="value" type="text" id="port" />
+            <label class="translate" for="port">Port:</label>
+          </div>
+          <div class="input-field col s12 m6 l4 udp serial">
+            <input class="value" type="text" id="connTimeout" />
+            <label class="translate" for="connTimeout">Connection timeout:</label>
+            <span class="translate">ms</span>
+          </div>
+          <div class="input-field col s12 m6 l4 tcp udp tcpclient serial">
+            <input class="value" type="text" id="inclusionTimeout" />
+            <label class="translate" for="inclusionTimeout">Inclusion mode timeout:</label>
+            <span class="translate">inclusion help</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col s12 m6 l4 tcp udp tcpclient serial">
+            <a id="enableInclusion" class="waves-effect waves-light btn"><span class="translate">Enable inclusion mode</span></a>
+          </div>
+        </div>
+      </div>
+      <div id="tab-firmware" class="col s12 page">
+        <div class="row">
+          <div id="nodediv" class="col s12 m12">
+            <table class="highlight">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name Sketch</th>
+                  <th>Type</th>
+                  <th>Parent</th>
+                  <th>Version</th>
+				  <th>BLVersion</th>
+                  <th>Reboot</th>
+                  <th>
+                    <div class="file-upload">
+                      <label> <input type="file" accept=".hex" id="uploadFile" multiple>
+                     <span>Firmware</span>
+                     </label>
                     </div>
-                </div>
-			</div>
-		</div>
+                  </th>
+                  <th>Download?</th>
+                </tr>
+              </thead>
+              <tbody id="nodeTable">
+
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
 </body>
 
 </html>
