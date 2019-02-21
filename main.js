@@ -19,6 +19,7 @@ var inclusionTimeout = false;
 var path;
 var fs;
 var config = {};
+const FIRMWARE_BLOCK_SIZE = 16;
 
 try {
     serialport = require('serialport');//.SerialPort;
@@ -131,7 +132,7 @@ function getNodesList(obj){
 				});
 			});
 			//adapter.log.warn('nodesList2: ' + JSON.stringify(nodesList2));
-			//adapter.log.warn('objListNodes: ' + JSON.stringify(objListNodes));
+			adapter.log.warn('objListNodes: ' + JSON.stringify(objListNodes));
 			try {
 				adapter.sendTo(obj.from, obj.command, objListNodes, obj.callback);
 			}
@@ -149,6 +150,7 @@ function getNodesList(obj){
 adapter.on('message', function (obj) {
     if (obj) {
 		adapter.log.warn('obj.command: ' + obj.command);
+		let id;
         switch (obj.command.split('.')[0]) {
             case 'listUart':
                 if (obj.callback) {
@@ -169,9 +171,16 @@ adapter.on('message', function (obj) {
 				getNodesList(obj);
 				break;
 			case 'rebootID':
-				let id = obj.command.split('.')[1];
+				id = obj.command.split('.')[1];
 				adapter.log.debug('Rebooting node ID = ' + id);
 				mySensorsInterface.write(id + ';255;3;1;13;1');
+				break;
+			case 'downloadID':
+				let filename = obj.command.split(' ')[1];
+				id = obj.command.split(' ')[0].split('.')[1];
+				adapter.log.debug('Download frimware node ID = ' + id);
+				adapter.log.debug(filename);
+				loadFirmware(filename);
 				break;
         }
     }
@@ -188,6 +197,130 @@ adapter.on('unload', function (callback) {
         callback();
     }
 });
+
+function crcUpdate(old, value) {
+	let c = old ^ value;
+	for (let i = 0; i < 8; ++i) {
+		if ((c & 1) > 0)
+			c = ((c >> 1) ^ 0xA001);
+		else
+			c = (c >> 1);
+	}
+	return c;
+}
+
+function loadFirmware(filename) {
+	//var filename = "/opt/iobroker/iobroker-data/files/mysensors.0/firmware/SensorDoorNRF24_v2.1.ino.hex";
+    adapter.log.debug("compiling firmware: " + filename);
+	try {	
+		adapter.readFile(adapter.namespace, 'firmware/' + filename, 'utf8', (err, data) => {
+			if (err) {adapter.log.error(err)}
+			else {
+			//fs.readFile(filename, 'utf8', (err, data) => {
+				let fwdata = [];
+				let start = 0;
+				let end = 0;
+				let pos = 0;
+				data = data.toString('utf8');
+				adapter.log.debug(JSON.stringify(data));
+				 
+				let hex = data.split("\n");
+				adapter.log.debug(JSON.stringify(hex));
+						
+				for(let l in hex) {
+					let line = hex[l].trim();
+					if (line.length > 0) {
+						while (line.substring(0, 1) != ":")
+							line = line.substring(1);
+						
+						let reclen = parseInt(line.substring(1, 3), 16);
+						let offset = parseInt(line.substring(3, 7), 16);
+						let rectype = parseInt(line.substring(7, 9), 16);
+						let data = line.substring(9, 9 + 2 * reclen);
+						let chksum = parseInt(line.substring(9 + (2 * reclen), 9 + (2 * reclen) + 2), 16);
+						
+						if (rectype == 0) {
+							if ((start == 0) && (end == 0)) {
+								if (offset % 128 > 0)
+									throw new Error("error loading hex file - offset can't be devided by 128");
+								start = offset;
+								end = offset;
+							}
+							if (offset < end)
+									throw new Error("error loading hex file - offset lower than end");
+							
+							while (offset > end) {
+								fwdata.push(255);
+								pos++;
+								end++;
+							}
+							
+							for (let i = 0; i < reclen; i++) {
+								fwdata.push(parseInt(data.substring(i * 2, (i * 2) + 2), 16));
+								pos++;
+							}
+							end += reclen;
+						}
+					}
+				}	
+				
+				let pad = end % 128; // ATMega328 has 64 words per page / 128 bytes per page
+				for (let i = 0; i < 128 - pad; i++) {
+					fwdata.push(255);
+					pos++;
+					end++;
+				}
+				
+				let blocks = (end - start) / FIRMWARE_BLOCK_SIZE;
+				let crc = 0xFFFF;
+				
+				for (let i = 0; i < blocks * FIRMWARE_BLOCK_SIZE; ++i) {
+					let v = crc;
+					crc = crcUpdate(crc, fwdata[i]);
+				}
+				
+				adapter.log.debug("loading firmware done. blocks: " + blocks + " / crc: " + crc);
+				let payload = [];
+				let fwblock = blocks;
+				for (let j = 0; j < 10; j++){
+					for (let i = 0; i < FIRMWARE_BLOCK_SIZE; i++)
+						payload.push(fwdata[fwblock * FIRMWARE_BLOCK_SIZE + i]);
+					adapter.log.debug('j=' + j + ': ' + JSON.stringify(payload));
+					payload = [];
+					fwblock -= 1;            
+				}
+			}
+		}); 
+	} catch (err) {
+		if (err) adapter.log.error(err);
+	} 
+}
+
+function pullWord(arr, pos) {
+	return arr[pos] + 256 * arr[pos + 1];
+}
+
+function payloadParse(str, val, radix){
+    let hByte;
+    let lByte;
+
+    lByte = str.slice(val*4, val*4 + 2);
+    hByte = str.slice(val*4 + 2, val*4 + 4);
+    return parseInt((hByte + lByte), radix);
+}
+
+function pushWord(arr, val) {
+	arr.push(val & 0x00FF);
+	arr.push((val  >> 8) & 0x00FF);
+}
+
+function sendFirmwareConfigResponse(node_id){
+	var payload = [];
+	//pushWord(payload, result.type);
+	//pushWord(payload, result.version);
+	//pushWord(payload, result.blocks);
+	//pushWord(payload, result.crc);
+}
 
 function send_message(obj_id, state){
     if (typeof state.val === 'boolean') state.val = state.val ? 1 : 0;
@@ -384,9 +517,12 @@ function processPresentation(data, ip, port) {
                 if (!found) {
                     adapter.log.debug('ID not found. Try to add to to DB');
                     var objs = getMeta(result[i], ip, port, config[ip || 'serial']);
+					adapter.log.warn('result[i]: ' + JSON.stringify(result[i]));
+					adapter.log.warn('ip: ' + JSON.stringify(ip));
+					adapter.log.warn('objs: ' + JSON.stringify(objs));
                     for (var j = 0; j < objs.length; j++) {
                         adapter.log.debug('Check ' + JSON.stringify(devices[adapter.namespace + '.' + objs[j]._id]));
-                        if (!devices[adapter.namespace + '.' + objs[j]._id]) {
+                        if (!devices[adapter.namespace + '.' + objs[j]._id]) { 
                             devices[adapter.namespace + '.' + objs[j]._id] = objs[j];
                             adapter.log.info('Add new object: ' + objs[j]._id + ' - ' + objs[j].common.name);
                             adapter.setObject(objs[j]._id, objs[j], function (err) {
@@ -432,7 +568,7 @@ function processPresentation(data, ip, port) {
                         var objs = getMeta2(result[i], ip, port, config[ip || 'serial'], devices[foundObjID].native.subType, common_name[0]);
                         if (!devices[adapter.namespace + '.' + objs[0]._id]) {
                             devices[adapter.namespace + '.' + objs[0]._id] = objs[0];
-                            adapter.log.info('Add new object: ' + objs[0]._id + ' - ' + objs[0].common.name);
+                            adapter.log.info('Add new object1: ' + objs[0]._id + ' - ' + objs[0].common.name);
                             adapter.setObject(objs[0]._id, objs[0], function (err) {
                                 if (err) adapter.log.error(err);
                             });
@@ -669,6 +805,18 @@ function main() {
                     } else if (result[i].type === 'stream') {
                         switch (result[i].subType) {
                             case 'ST_FIRMWARE_CONFIG_REQUEST':
+								var fwtype = payloadParse(result[i].payload, 0, 10);
+								var fwversion = payloadParse(result[i].payload, 1, 10);
+								var fwblocks = payloadParse(result[i].payload, 2, 16);
+								var fwcrc = payloadParse(result[i].payload, 3, 16);
+								var BLVersion = payloadParse(result[i].payload, 4, 10);
+								adapter.log.debug('fwtype = ' + fwtype);
+								adapter.log.debug('fwversion = ' + fwversion);
+								adapter.log.debug('fwblocks = ' + fwblocks);
+								adapter.log.debug('fwcrc = ' + fwcrc);
+								adapter.log.debug('BLVersion = ' + BLVersion);
+								//payloadParse(str, val, radix)
+								//sendFirmwareConfigResponse(result[i].id, fwtype, fwversion);
                                 break;
                             case 'ST_FIRMWARE_CONFIG_RESPONSE':
                                 break;
